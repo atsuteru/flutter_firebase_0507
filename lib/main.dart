@@ -1,6 +1,13 @@
 import 'dart:async';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
+final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: <String>[
+  'profile',
+  'https://www.googleapis.com/auth/photoslibrary',
+  'https://www.googleapis.com/auth/photoslibrary.sharing'
+]);
 
 void main() {
   Crashlytics.instance.enableInDevMode = true;
@@ -53,6 +60,35 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
+  GoogleSignInAccount _currentUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _googleSignIn.onCurrentUserChanged.listen((GoogleSignInAccount account) {
+      setState(() {
+        _currentUser = account;
+      });
+      if (_currentUser != null) {
+        _handleGetContact();
+      }
+    });
+    _googleSignIn.signInSilently();
+  }
+
+  Future<void> _handleGetContact() async {
+  }
+
+  Future<void> _handleSignIn() async {
+    try {
+      await _googleSignIn.signIn();
+    } catch (e, s) {
+      Crashlytics.instance
+          .recordError(e, s, context: 'Google SignIn error');
+    }
+  }
+
+  Future<void> _handleSignOut() => _googleSignIn.disconnect();
 
   void _incrementCounter() {
     setState(() {
@@ -63,6 +99,43 @@ class _MyHomePageState extends State<MyHomePage> {
       // called again, and so nothing would appear to happen.
       _counter++;
     });
+  }
+
+  Widget _buildGoogleSignInBody() {
+    if (_currentUser != null) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: <Widget>[
+          ListTile(
+            leading: GoogleUserCircleAvatar(
+              identity: _currentUser,
+            ),
+            title: Text(_currentUser.displayName ?? ''),
+            subtitle: Text(_currentUser.email ?? ''),
+          ),
+          const Text("Signed in successfully."),
+          RaisedButton(
+            child: const Text('SIGN OUT'),
+            onPressed: _handleSignOut,
+          ),
+          RaisedButton(
+            child: const Text('REFRESH'),
+            onPressed: _handleGetContact,
+          ),
+        ],
+      );
+    } else {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: <Widget>[
+          const Text("You are not currently signed in."),
+          RaisedButton(
+            child: const Text('SIGN IN'),
+            onPressed: _handleSignIn,
+          ),
+        ],
+      );
+    }
   }
 
   @override
@@ -156,6 +229,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         .recordError(e, s, context: 'as an example');
                   }
                 }),
+            _buildGoogleSignInBody(),
           ],
         ),
       ),
