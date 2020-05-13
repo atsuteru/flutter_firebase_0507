@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+final FirebaseAuth _auth = FirebaseAuth.instance;
 final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: <String>[
   'profile',
   'https://www.googleapis.com/auth/photoslibrary',
@@ -60,35 +62,54 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
-  GoogleSignInAccount _currentUser;
+  FirebaseUser _currentUser;
 
   @override
   void initState() {
     super.initState();
-    _googleSignIn.onCurrentUserChanged.listen((GoogleSignInAccount account) {
-      setState(() {
-        _currentUser = account;
-      });
-      if (_currentUser != null) {
+    new Future(() async{
+      if (await _handleSignIn(await _googleSignIn.signInSilently())) {
         _handleGetContact();
       }
     });
-    _googleSignIn.signInSilently();
   }
 
   Future<void> _handleGetContact() async {
   }
 
-  Future<void> _handleSignIn() async {
-    try {
-      await _googleSignIn.signIn();
-    } catch (e, s) {
-      Crashlytics.instance
-          .recordError(e, s, context: 'Google SignIn error');
+  Future<bool> _handleSignIn(GoogleSignInAccount googleSignInAccount) async {
+    if (googleSignInAccount == null) {
+      return false;
     }
+    final GoogleSignInAuthentication googleSignInAuthentication = await googleSignInAccount.authentication;
+    final AuthCredential credential = GoogleAuthProvider.getCredential(
+      accessToken: googleSignInAuthentication.accessToken,
+      idToken: googleSignInAuthentication.idToken,
+    );
+    final AuthResult authResult = await _auth.signInWithCredential(credential);
+    final FirebaseUser user = authResult.user;
+    if (user.isAnonymous) {
+      return false;
+    }
+    if (await user.getIdToken() == null) {
+      return false;
+    }
+    final FirebaseUser currentUser = await _auth.currentUser();
+    if (user.uid != currentUser.uid) {
+      return false;
+    }
+    setState(() {
+      _currentUser = currentUser;
+    });
+    return true;
   }
 
-  Future<void> _handleSignOut() => _googleSignIn.disconnect();
+  Future<void> _handleSignOut() async {
+    await _googleSignIn.signOut();
+    setState(() {
+      _currentUser = null;
+    });
+  }
 
   void _incrementCounter() {
     setState(() {
@@ -106,21 +127,24 @@ class _MyHomePageState extends State<MyHomePage> {
       return Column(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: <Widget>[
-          ListTile(
-            leading: GoogleUserCircleAvatar(
-              identity: _currentUser,
+          Card(
+            color: Colors.lightBlueAccent,
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundImage: NetworkImage(
+                  _currentUser.photoUrl,
+                ),
+                radius: 30,
+                backgroundColor: Colors.transparent,
+              ),
+              title: Text(_currentUser.displayName ?? ''),
+              subtitle: Text(_currentUser.email ?? ''),
             ),
-            title: Text(_currentUser.displayName ?? ''),
-            subtitle: Text(_currentUser.email ?? ''),
           ),
           const Text("Signed in successfully."),
           RaisedButton(
             child: const Text('SIGN OUT'),
             onPressed: _handleSignOut,
-          ),
-          RaisedButton(
-            child: const Text('REFRESH'),
-            onPressed: _handleGetContact,
           ),
         ],
       );
@@ -131,7 +155,11 @@ class _MyHomePageState extends State<MyHomePage> {
           const Text("You are not currently signed in."),
           RaisedButton(
             child: const Text('SIGN IN'),
-            onPressed: _handleSignIn,
+            onPressed: () async{
+              if (await _handleSignIn(await _googleSignIn.signIn())) {
+                _handleGetContact();
+              }
+            }
           ),
         ],
       );
