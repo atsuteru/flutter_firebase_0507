@@ -1,8 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/http.dart';
+
+import 'photos_library_api/album.dart';
+import 'photos_library_api/create_album_request.dart';
 
 final FirebaseAuth _auth = FirebaseAuth.instance;
 final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: <String>[
@@ -63,6 +69,7 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
   FirebaseUser _currentUser;
+  Future<Map<String, String>> _authHeaders;
 
   @override
   void initState() {
@@ -98,8 +105,10 @@ class _MyHomePageState extends State<MyHomePage> {
     if (user.uid != currentUser.uid) {
       return false;
     }
+
     setState(() {
       _currentUser = currentUser;
+      _authHeaders = googleSignInAccount.authHeaders;
     });
     return true;
   }
@@ -109,6 +118,24 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {
       _currentUser = null;
     });
+  }
+
+  Future<void> _handleMakeAlbum() async {
+    return http
+        .post(
+          'https://photoslibrary.googleapis.com/v1/albums',
+          body: jsonEncode(CreateAlbumRequest.fromTitle("New Album")),
+          headers: await _authHeaders,
+        )
+        .then(
+          (Response response) {
+            if (response.statusCode != 200) {
+              Crashlytics.instance.log('album create error. reasonPhrase=${response.reasonPhrase}');
+            }
+            var album = Album.fromJson(jsonDecode(response.body));
+            Crashlytics.instance.log('album created. albumId=${album.id}.');
+          },
+        );
   }
 
   void _incrementCounter() {
@@ -145,6 +172,10 @@ class _MyHomePageState extends State<MyHomePage> {
           RaisedButton(
             child: const Text('SIGN OUT'),
             onPressed: _handleSignOut,
+          ),
+          RaisedButton(
+            child: const Text('Make album'),
+            onPressed: _handleMakeAlbum,
           ),
         ],
       );
